@@ -25,7 +25,7 @@ def main():
         #     print("You're connected to - ", record)
         connection = mysql.connector.connect(host='localhost',
                                              database='testdb',
-                                             user='root', password='tigers1')
+                                             user='root', password='tigers1', ssl_disabled=True)
         df = pd.read_sql('SELECT * FROM pet;', con=connection)
         print(df)
 
@@ -37,16 +37,20 @@ def main():
             connection.close()
 
 def load_data(ticker, period):
-    df = pd.read_csv("/media/chuck/DATA/Dropbox/chuck/market_data/{}/{}.Last.txt".format(period, ticker.upper()), delimiter=';',
+    dellPathPrefix = "/media/chuck/OS/Users/fanni"
+    rogPathPrefix = "/media/chuck/DATA"
+    df = pd.read_csv(dellPathPrefix + "/Dropbox/chuck/market_data/{}/{}.Last.txt".format(period, ticker.upper()), delimiter=';',
                      names=['dt', 'open', 'high','low', 'close', 'volume'],
                      dtype={'dt':np.str, 'open':np.float64, 'high':np.float64,
                             'low':np.float64,'close':np.float64, 'volume':np.int})
     # df.columns=['dt', 'open', 'high','low', 'close', 'volume']
 
+    if period != 'daily':
+        df['dt'] = pd.to_datetime(df['dt']).dt.tz_localize('UTC').dt.tz_convert('America/Chicago').dt.tz_localize(None)
 
     connection = mysql.connector.connect(host='localhost',
                                          database='marketdata',
-                                         user='root', password='tigers1')
+                                         user='root', password='tigers1', ssl_disabled=True)
 
     DB_NAME = 'marketdata'
 
@@ -62,9 +66,12 @@ def load_data(ticker, period):
     #     " PRIMARY KEY ('dt')"
     #     ") ENGINE=InnoDB"
     # )
-    TABLES['{}_{}'.format(ticker, period)] = ("DROP TABLE IF EXISTS {}_daily; "
-                         "CREATE TABLE {}_daily (dt date NOT NULL, open double, high double, "
-                         "low double, close double, volume bigint unsigned, PRIMARY KEY(dt)) ENGINE=InnoDB".format(ticker, ticker))
+    TABLES['{}_{}'.format(ticker, period)] = ("DROP TABLE IF EXISTS {}_{}; "
+                         "CREATE TABLE {}_{} (dt timestamp NOT NULL, open double, high double, "
+                         "low double, close double, volume bigint unsigned, PRIMARY KEY(dt)) ENGINE=InnoDB".format(ticker,
+                                                                                                                   period,
+                                                                                                                   ticker,
+                                                                                                                   period))
 
     cursor = connection.cursor()
     try:
@@ -77,7 +84,7 @@ def load_data(ticker, period):
 
     connection = mysql.connector.connect(host='localhost',
                                          database='marketdata',
-                                         user='root', password='tigers1')
+                                         user='root', password='tigers1' , ssl_disabled=True)
     # df.to_sql(con=connection, name='cvx_min', if_exists='append', schema='mysql', index=False )
     add_data = ("INSERT INTO {}_{} "
                 "(dt, open, high, low, close, volume) "
@@ -121,19 +128,34 @@ def get_pair_returns(sec1, sec2, period='daily'):
     print(skew(df['ret_spread']))
     print(kurtosis(df['ret_spread']))
     print(df['ret_spread'].mean())
-    print(df)
+    # print(df)
+
+def get_aggregated_returns(tablename, num_minutes):
+    with open(PATH + "/../sql/get_aggregated_returns.sql", 'r') as f:
+        sql_stmt = f.read()
+
+    sql_stmt = sql_stmt.replace('%REPLACE_TABLE%', tablename)
+    sql_stmt = sql_stmt.replace('%NUM_MINUTES%', str(num_minutes))
+    con = get_connection()
+    df = pd.read_sql(sql_stmt, con=con)
+    print(df.head())
 
 
 
 def get_connection():
     return mysql.connector.connect(host='localhost', database='marketdata',
-                                             user='root', password='tigers1')
+                                             user='root', password='tigers1', ssl_disabled=True)
 
 if __name__ == '__main__':
+    # main()
     # tickers = ['cvx', 'xom']
     # period = 'daily'
     # for ticker in tickers:
     #     load_data(ticker, period)
 
-    get_pair_returns("aapl", "xom")
-    # load_data('aal', 'daily')
+    # periodget_pair_returns("aapl", "xom")
+    # for tick in ['aapl', 'a', 'axp', 'ba', 'cat', 'cvx', 'hal', 'iwm', 'slb', 'spy', 'xom']:
+    #     load_data(tick, '1min')
+
+    # get_pair_returns('aapl', 'cvx')
+    get_aggregated_returns('aapl_1min', 5)
