@@ -1,4 +1,5 @@
 import pandas as pd
+import logging
 import mysql.connector
 from mysql.connector import Error
 import numpy as np
@@ -8,6 +9,8 @@ import matplotlib.pyplot as plt
 from scipy.stats import norm, skew, kurtosis
 
 PATH = os.path.dirname(os.path.realpath(__file__))
+
+
 
 
 def main():
@@ -37,9 +40,9 @@ def main():
             connection.close()
 
 def load_data(ticker, period):
-    dellPathPrefix = "/media/chuck/OS/Users/fanni"
+    # dellPathPrefix = "/media/chuck/OS/Users/fanni"
     rogPathPrefix = "/media/chuck/DATA"
-    df = pd.read_csv(dellPathPrefix + "/Dropbox/chuck/market_data/{}/{}.Last.txt".format(period, ticker.upper()), delimiter=';',
+    df = pd.read_csv(rogPathPrefix + "/Dropbox/chuck/market_data/{}/{}.Last.txt".format(period, ticker.upper()), delimiter=';',
                      names=['dt', 'open', 'high','low', 'close', 'volume'],
                      dtype={'dt':np.str, 'open':np.float64, 'high':np.float64,
                             'low':np.float64,'close':np.float64, 'volume':np.int})
@@ -51,6 +54,8 @@ def load_data(ticker, period):
     connection = mysql.connector.connect(host='localhost',
                                          database='marketdata',
                                          user='root', password='tigers1', ssl_disabled=True)
+    df.to_csv(rogPathPrefix + "/Dropbox/chuck/market_data/{}/{}.Last_TZ_converted.txt".format(period, ticker.upper()),
+              sep=';', index=False, header=False)
 
     DB_NAME = 'marketdata'
 
@@ -130,21 +135,50 @@ def get_pair_returns(sec1, sec2, period='daily'):
     print(df['ret_spread'].mean())
     # print(df)
 
-def get_aggregated_returns(tablename, num_minutes):
+def get_aggregated_returns(tablename, num_minutes, start_dt='2000-01-01', end_dt='NOW'):
     with open(PATH + "/../sql/get_aggregated_returns.sql", 'r') as f:
         sql_stmt = f.read()
 
     sql_stmt = sql_stmt.replace('%REPLACE_TABLE%', tablename)
     sql_stmt = sql_stmt.replace('%NUM_MINUTES%', str(num_minutes))
-    con = get_connection()
-    df = pd.read_sql(sql_stmt, con=con)
-    print(df.head())
+    sql_stmt = sql_stmt.replace('%REPLACE_START_DT%', start_dt)
+    if end_dt != 'NOW':
+        sql_stmt = sql_stmt.replace('NOW()', "'" + end_dt + "'")
+
+    try:
+        con = get_connection()
+        df = pd.read_sql(sql_stmt, con=con)
+
+    except mysql.connector.Error as error:
+        print("this")
+
+    finally:
+        if (con.is_connected()):
+            con.close()
+
+    return df
 
 
 
 def get_connection():
     return mysql.connector.connect(host='localhost', database='marketdata',
                                              user='root', password='tigers1', ssl_disabled=True)
+
+def export_tz_converted_csv(ticker, period):
+    # dellPathPrefix = "/media/chuck/OS/Users/fanni"
+    rogPathPrefix = "/media/chuck/DATA"
+    df = pd.read_csv(rogPathPrefix + "/Dropbox/chuck/market_data/{}/{}.Last.txt".format(period, ticker.upper()),
+                     delimiter=';',
+                     names=['dt', 'open', 'high', 'low', 'close', 'volume'],
+                     dtype={'dt': np.str, 'open': np.float64, 'high': np.float64,
+                            'low': np.float64, 'close': np.float64, 'volume': np.int})
+    # df.columns=['dt', 'open', 'high','low', 'close', 'volume']
+
+    if period != 'daily':
+        df['dt'] = pd.to_datetime(df['dt']).dt.tz_localize('UTC').dt.tz_convert('America/Chicago').dt.tz_localize(None)
+
+    df.to_csv(rogPathPrefix + "/Dropbox/chuck/market_data/{}/{}.Last_TZ_converted.txt".format(period, ticker.upper()),
+              sep=';', index=False, header=False)
 
 if __name__ == '__main__':
     # main()
@@ -154,8 +188,27 @@ if __name__ == '__main__':
     #     load_data(ticker, period)
 
     # periodget_pair_returns("aapl", "xom")
-    # for tick in ['aapl', 'a', 'axp', 'ba', 'cat', 'cvx', 'hal', 'iwm', 'slb', 'spy', 'xom']:
+    # for tick in ['xom']: #, 'a', 'axp', 'ba', 'cat', 'cvx', 'hal', 'iwm', 'slb', 'spy', 'xom']:
     #     load_data(tick, '1min')
 
     # get_pair_returns('aapl', 'cvx')
-    get_aggregated_returns('aapl_1min', 5)
+    # df = get_aggregated_returns('aapl_1min', 5, start_dt='2019-06-28', end_dt='2019-07-02')
+    # logger = logging.getLogger('THISLOGGER')
+    # logger.setLevel(logging.INFO)
+    #
+    # logger.info("log this")
+    # logging.basicConfig(format='%(asctime)s %(module)s %(levelname)s:%(message)s', level=logging.INFO)
+    # logging.info("TEST")
+    # logging.warning("WARN")
+
+    logger = logging.getLogger(__name__)
+    logger.setLevel(level=logging.INFO)
+    ch=logging.StreamHandler()
+    ch.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(asctime)s %(module)s %(levelname)s:%(message)s')
+    ch.setFormatter(formatter)
+    logger.addHandler(ch)
+    logger.info("TEST")
+    print("THIS IS AFTER LOG")
+
+    # https://docs.python.org/3/howto/logging.html
